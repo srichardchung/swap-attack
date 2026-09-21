@@ -1,8 +1,6 @@
-# dependencies
-node_modules/
-
-# build output
-dist/
+# Godot build output
+.godot/
+export/
 
 # macOS
 .DS_Store
@@ -11,6 +9,6 @@ dist/
 .vscode/
 *.swp
 
-# environment
-.env
-.env.local
+# Godot mono / C# (not used, but common in shared configs)
+.mono/
+data_*/

@@ -1,60 +1,50 @@
 # Swap Attack
 
-A browser-based, single-player puzzle game inspired by Tetris Attack / Panel de Pon. Swap adjacent colored blocks to create matches, trigger chain reactions, and rack up combo scores.
+A desktop single-player puzzle game inspired by Tetris Attack / Panel de Pon.
+Swap adjacent coloured blocks to create matches, trigger chain reactions, and rack up combo scores.
 
-Built with **Phaser 3**, **TypeScript**, and **Vite**.
+Built with **Godot 4.7.2** and **GDScript**.
 
 ## Requirements
 
-- Node.js 18+
-- npm 9+
+- [Godot 4.7.2](https://godotengine.org/download) (standard build, no Mono/C# required)
 
-## Setup
+## Running the game
 
-```bash
-npm install
-```
+1. Open Godot 4.7.2.
+2. Click **Import** and select the `project.godot` file at the root of this repository.
+3. Press **F5** (or the Play button) to run from `scenes/Main.tscn`.
 
-## Development
-
-```bash
-npm run dev
-```
-
-Opens at [http://localhost:3000](http://localhost:3000) with hot-module replacement.
-
-## Production Build
-
-```bash
-npm run build
-```
-
-Output goes to `dist/`. Serve with:
-
-```bash
-npm run preview
-```
-
-## Project Structure
+## Project structure
 
 ```
-src/game/
-├── main.ts               # Phaser boot config
-├── constants.ts          # Grid dimensions, timing, scoring
-├── types.ts              # Shared TypeScript types
+swap-attack/
+├── project.godot            ← Godot project file and Input Map
 ├── scenes/
-│   ├── BootScene.ts      # Asset preloading
-│   ├── GameScene.ts      # Main game loop
-│   └── GameOverScene.ts  # Results screen
-├── components/
-│   ├── Grid.ts           # Grid data model + match/gravity logic
-│   ├── Cursor.ts         # Player cursor + input
-│   ├── BlockSprite.ts    # Block rendering
-│   └── HUD.ts            # Score / chain / combo display
-└── state/
-    └── GameState.ts      # Reactive score state
+│   ├── Main.tscn            ← entry scene
+│   ├── GameScene.tscn       ← main play field
+│   ├── Block.tscn           ← reusable block node
+│   └── GameOverScene.tscn   ← results screen
+├── scripts/
+│   ├── Constants.gd         ← Autoload: grid dimensions, timing, scoring
+│   ├── GameState.gd         ← Autoload: reactive score / chain / combo state
+│   ├── Grid.gd              ← board data + match / gravity algorithms
+│   ├── Cursor.gd            ← player cursor + key-repeat input
+│   ├── Block.gd             ← per-block visual state
+│   ├── HUD.gd               ← score / chain / combo display
+│   └── AudioManager.gd      ← audio stub (future use)
+└── assets/
+    ├── sprites/             ← block textures (6 colours + flash frame)
+    └── fonts/               ← HUD font
 ```
+
+## Controls
+
+| Action | Keys |
+|---|---|
+| Move cursor | Arrow keys or WASD |
+| Swap blocks | Space or X |
 
 ## Spec
 
-Feature spec lives in `.kiro/specs/swap-attack/`.
+Feature spec and design documents live in `.kiro/specs/swap-attack/`.
