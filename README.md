@@ -9,7 +9,9 @@ Built with **Godot 4.7.2** and **GDScript**.
 
 - [Godot 4.7.2](https://godotengine.org/download) (standard build, no Mono/C# required)
 
-## Running the game
+## Running the game (once `project.godot` exists — see Task 0.1)
+
+> `project.godot` is not yet in the repository. These steps apply after Phase 0 is complete.
 
 1. Open Godot 4.7.2.
 2. Click **Import** and select the `project.godot` file at the root of this repository.

@@ -10,12 +10,12 @@
 ### Task 0.1 — Create Godot project ✅ (infrastructure)
 - [ ] Open Godot 4.7.2, create a new project in the repository root named `swap-attack`
 - [ ] Confirm `project.godot` is created at repo root
-- [ ] Set window size to 800 × 600 in Project Settings → Display → Window
+- [ ] Set window size to **800 × 656** in Project Settings → Display → Window
 - [ ] Set `Main.tscn` as the main scene in Project Settings → Application → Run
 
 **Acceptance criteria**:
 - `project.godot` exists at repo root and is committed
-- Running the project opens an 800 × 600 window with no errors in the Output panel
+- Running the project opens an **800 × 656** window with no errors in the Output panel
 
 ### Task 0.2 — Configure Input Map
 - [ ] Open Project Settings → Input Map
@@ -48,6 +48,7 @@
 
 **Acceptance criteria**:
 - `Constants.COLS == 6`, `Constants.ROWS == 12`
+- `Constants.CANVAS_H == 656` (= 80 + 12 × 48; not 600)
 - `Constants.GRID_ORIGIN_X == 256`, `Constants.GRID_ORIGIN_Y == 80`
 - `Constants.BlockColor` has exactly 6 members (RED, BLUE, GREEN, YELLOW, PURPLE, TEAL)
 - No other script re-defines these values
@@ -112,13 +113,14 @@
 - **Refs**: REQ-3.4, REQ-3.6, Design §7.1
 
 ### Task 1.6 — Implement `Grid.apply_gravity()`
-- [ ] Bottom-up write-pointer scan per column (see Design §7.1 algorithm)
-- [ ] Skip `FLASHING` cells
-- [ ] Return `true` if any block moved, `false` if board is settled
+- [ ] One-cell-per-call scan: for each column, scan rows from `ROWS-2` down to `0`; if a non-null, non-FLASHING block has a `null` cell directly below it, move it one row down
+- [ ] Return `true` if any block moved, `false` if the board is fully settled
+- [ ] `FallTimer` (repeating at `FALL_STEP_SEC`) calls `apply_gravity()` each tick; the timer stops when `false` is returned
 
 **Acceptance criteria**:
-- A column `[null, RED, null, null, …, null]` after one call becomes `[…, null, null, RED]` at row 11
-- Returns `false` when all blocks already rest on filled cells or row 11
+- A single block at row 0, column 0 with all rows below it empty: after **one** `apply_gravity()` call it is at row 1 (not row 11); after 11 calls it is at row 11
+- Returns `false` when all blocks rest directly on a filled cell or on row 11
+- Returns `true` on the call that moves at least one block
 - **Refs**: REQ-3.6, Design §7.1
 
 ### Task 1.7 — Implement `Grid.rise_row()`
@@ -189,6 +191,9 @@
 
 ### Task 4.1 — Wire `GameScene.tscn` and `create()`
 - [ ] Add `Grid`, `CursorNode`, `HUD`, `FlashTimer`, `FallTimer`, `RiseTimer` nodes to `GameScene.tscn`
+  - `FlashTimer`: one-shot, `wait_time = FLASH_DURATION`
+  - `FallTimer`: repeating, `wait_time = FALL_STEP_SEC`
+  - `RiseTimer`: repeating, `wait_time = RISE_SPEED_SEC` (one fire per full row rise)
 - [ ] In `_ready()`: call `Grid.initialize()`, `HUD.bind(GameState)`, connect `Cursor.swap_requested → _on_swap_requested`
 - [ ] Instantiate one `Block.tscn` per cell (`ROWS × COLS = 72`) into `Grid` node; position each at `GRID_ORIGIN + Vector2(col*BLOCK_PX, row*BLOCK_PX)`
 - [ ] Set initial `_scene_state = SceneState.IDLE`
@@ -219,7 +224,12 @@
 
 ### Task 4.3 — Chain and combo scoring
 - [ ] Track `_current_chain: int = 1` in `GameScene.gd`
-- [ ] On `CHECK_MATCHES` (from `FALLING` path): if matches found → `GameState.set_chain(_current_chain)` → `_current_chain += 1`; if no matches → `GameState.set_chain(1)` → `_current_chain = 1`
+- [ ] On `CHECK_MATCHES` from `IDLE` (player swap path):
+  - Score this clear with `chain_level = 1` (`GameState.set_chain(1)`)
+  - Set `_current_chain = 2` so the next reactive clear scores at level 2
+- [ ] On `CHECK_MATCHES` from `FALLING` (chain reaction path):
+  - If matches found: `GameState.set_chain(_current_chain)` → score at `_current_chain` → `_current_chain += 1`
+  - If no matches: `GameState.set_chain(1)` → `_current_chain = 1` → go to `RISING`
 - [ ] Calculate `combo_mult = max(1, block_count / 3)` (integer division)
 - [ ] Call `GameState.add_score(BASE_POINTS × block_count × combo_mult × chain_level)`
 - [ ] Call `GameState.update_highest_combo(block_count)`
@@ -227,10 +237,12 @@
 - [ ] Call `HUD.show_combo_label(block_count)` when `block_count > 3`
 
 **Acceptance criteria**:
-- Clearing 6 blocks on chain level 2 → score increases by 240 (`10×6×2×2`)
-- Clearing 3 blocks → no combo label shown; chain label shown only if `chain_level > 1`
+- Player clears 3 blocks → `chain_level = 1`, score += 30, no chain label shown
+- First gravity-triggered clear of 3 blocks → `chain_level = 2`, score += 60 (`10×3×1×2`)
+- Second gravity-triggered clear of 3 blocks → `chain_level = 3`, score += 90 (`10×3×1×3`)
+- Clearing 6 blocks at `chain_level = 2` → score += 240 (`10×6×2×2`)
 - `chain_level` never goes below 1
-- **Refs**: REQ-4.1 – REQ-4.5, REQ-5.3, Design §8
+- **Refs**: REQ-4.1 – REQ-4.5, REQ-5.3, Design §7.5, §8
 
 ### Task 4.4 — Sync `Block.tscn` pool with `Grid._data`
 - [ ] After every state transition that mutates `_data`, iterate all cells and call `block_pool[row][col].set_color / play_flash / set_empty` to match `_data`

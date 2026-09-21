@@ -39,7 +39,7 @@ Swap Attack is a desktop single-player puzzle game inspired by Tetris Attack / P
 - **REQ-3.1** After every swap or gravity settle, `Grid.find_matches()` shall scan the entire grid.
 - **REQ-3.2** A match is **3 or more consecutive same-coloured blocks** in a horizontal or vertical line.
 - **REQ-3.3** Overlapping matches (e.g. an L-shape) shall all be collected into the same match set and cleared in one pass.
-- **REQ-3.4** Matched blocks shall enter a **flash state** lasting `FLASH_DURATION_SEC` (default 0.5 s) before being removed. The flash is driven by a timer in the scene state machine, not by per-block timers.
+- **REQ-3.4** Matched blocks shall enter a **flash state** lasting `FLASH_DURATION` seconds (default 0.5 s) before being removed. The flash is driven by a timer in the scene state machine, not by per-block timers.
 - **REQ-3.5** While blocks are flashing the cursor shall remain operable; the player may continue moving and queuing swaps.
 - **REQ-3.6** After flashing blocks are removed (`Grid.clear_flashing()`), all floating blocks above cleared cells shall fall downward until they rest on a filled cell or row 11. Gravity is applied column-by-column via `Grid.apply_gravity()`.
 - **REQ-3.7** After gravity settles, `find_matches()` runs again to detect chain reactions.
@@ -48,7 +48,7 @@ Swap Attack is a desktop single-player puzzle game inspired by Tetris Attack / P
 
 - **REQ-4.1** A **Combo** is clearing more than 3 blocks in a single match pass. The combo **label** (`HUD.show_combo_label`) fires only when `block_count > 3`.
 - **REQ-4.2** A **Chain** is a match triggered by blocks falling after a prior clear, without any player swap in between.
-- **REQ-4.3** `chain_level` starts at **1** for the first player-initiated clear and increments by 1 for each successive reactive clear.
+- **REQ-4.3** `chain_level` equals **1** for the first player-initiated clear. It is set to **2** immediately after that first clear so the first gravity-triggered chain reaction scores at level 2. Each subsequent reactive clear increments it by 1.
 - **REQ-4.4** `chain_level` resets to **1** (never 0) when gravity settles and `find_matches()` returns empty. `GameState.set_chain(1)` is the reset call.
 - **REQ-4.5** Score for each clear pass: `BASE_POINTS × block_count × combo_mult × chain_level`
   - `combo_mult = max(1, block_count / 3)` (integer floor).

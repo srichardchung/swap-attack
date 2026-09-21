@@ -156,7 +156,8 @@ Derived layout (also in `Constants.gd`):
 
 ```gdscript
 const CANVAS_W         := 800
-const CANVAS_H         := 600
+# CANVAS_H = HUD_HEIGHT + ROWS * BLOCK_PX = 80 + 12 * 48 = 656
+const CANVAS_H         := 656
 const HUD_HEIGHT       := 80
 const GRID_ORIGIN_X    := (CANVAS_W - COLS * BLOCK_PX) / 2   # = 256
 const GRID_ORIGIN_Y    := HUD_HEIGHT                          # = 80
@@ -198,7 +199,7 @@ GameScene (Node2D)
 │       └── HighComboLabel   (Label)
 ├── FlashTimer    (Timer)   ← one-shot; duration = FLASH_DURATION
 ├── FallTimer     (Timer)   ← repeating; wait_time = FALL_STEP_SEC
-└── RiseTimer     (Timer)   ← repeating; wait_time = RISE_SPEED_SEC / ROWS
+└── RiseTimer     (Timer)   ← repeating; wait_time = RISE_SPEED_SEC
 ```
 
 ### 6.3 `Block.tscn` — node hierarchy
@@ -276,20 +277,22 @@ func rise_row() -> bool:
 2. Vertical pass: for each col 0..5, scan top-to-bottom with the same logic.
 3. Return the **deduplicated union** (use a `Dictionary` keyed by `Vector2i` for O(1) dedup).
 
-**Gravity algorithm**:
+**Gravity algorithm** — moves each floating block **one cell downward per call**. `FallTimer` fires repeatedly at `FALL_STEP_SEC`; one call per tick produces the visible one-cell-at-a-time fall animation.
+
 ```
+moved = false
 for col in 0..COLS-1:
-    write_ptr = ROWS - 1
-    for row in ROWS-1 down to 0:
+    # scan from second-to-bottom row upward
+    for row in ROWS-2 down to 0:
         if _data[row][col] != null and _data[row][col].state != FLASHING:
-            _data[write_ptr][col] = _data[row][col]
-            if write_ptr != row:
+            if _data[row + 1][col] == null:
+                _data[row + 1][col] = _data[row][col]
                 _data[row][col] = null
-            write_ptr -= 1
-    while write_ptr >= 0:
-        _data[write_ptr][col] = null
-        write_ptr -= 1
+                moved = true
+return moved
 ```
+
+Each call moves every unsupported block exactly one row down. The `FallTimer` keeps firing until `apply_gravity()` returns `false` (all blocks have settled).
 
 ### 7.2 `Cursor.gd`
 
@@ -368,13 +371,23 @@ GAME_OVER
 ```gdscript
 var _current_chain: int = 1
 
-# On entering CHECK_MATCHES from FALLING (chain reaction path):
-#   if matches found → GameState.set_chain(_current_chain); _current_chain += 1
-#   if no matches    → GameState.set_chain(1); _current_chain = 1 → go to RISING
-
 # On entering CHECK_MATCHES from IDLE (player swap path):
-#   _current_chain = 1
+#   reset: _current_chain = 1
+#   score this clear at chain_level = 1
+#   then: _current_chain = 2  (so the NEXT reactive clear scores at level 2)
+
+# On entering CHECK_MATCHES from FALLING (chain reaction path):
+#   if matches found:
+#     GameState.set_chain(_current_chain)   # _current_chain is already ≥ 2
+#     score this clear at chain_level = _current_chain
+#     _current_chain += 1                   # prepare next reaction level
+#   if no matches:
+#     GameState.set_chain(1)
+#     _current_chain = 1
+#     → go to RISING
 ```
+
+**Decision recorded**: the first gravity-triggered chain reaction scores at `chain_level = 2`. This is achieved by setting `_current_chain = 2` immediately after the player-initiated clear (before any `FALLING` state), so when the first reactive `CHECK_MATCHES` runs it already holds 2.
 
 ---
 
@@ -404,7 +417,9 @@ Example: 6 blocks cleared on a chain-level-2 reaction → `10 × 6 × 2 × 2 = 2
 │   6 × 12 block grid     │  288 × 576 px  (@48 px/block)
 │   centred horizontally  │  origin (256, 80)
 │                         │
-└─────────────────────────┘  600 px tall
+└─────────────────────────┘  656 px tall  (80 HUD + 12×48 grid)
 ```
+
+> **Window size decision**: `CANVAS_H = 656`, not 600. `HUD_HEIGHT (80) + ROWS × BLOCK_PX (576) = 656`. A 600 px window would clip the bottom two rows of the grid.
 
 Block pixel position: `Vector2(GRID_ORIGIN_X + col * BLOCK_PX, GRID_ORIGIN_Y + row * BLOCK_PX)`.
