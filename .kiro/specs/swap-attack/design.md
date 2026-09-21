@@ -149,8 +149,9 @@ class Grid {
   // Apply gravity: drop all floating blocks one step; returns true if any block moved
   applyGravity(): boolean;
 
-  // Add a new row at the bottom, shift everything up by one
-  riseRow(): void;
+  // Add a new row at the bottom, shift everything up by one.
+  // Returns true if row 0 was occupied before shifting (Game Over condition).
+  riseRow(): boolean;
 }
 
 export interface CellCoord { row: number; col: number; }
@@ -215,13 +216,15 @@ Orchestrates all subsystems. Implements the Phaser scene lifecycle.
 ```
 IDLE → (swap input) → CHECK_MATCHES
 CHECK_MATCHES → (matches found) → FLASHING
-CHECK_MATCHES → (no matches) → RISING
-FLASHING → (timer elapsed) → CLEARING
-CLEARING → FALLING
-FALLING → (gravity done) → CHECK_MATCHES  ← chain reaction loop
-FALLING → (gravity done, no matches) → RISING
-RISING → IDLE
+CHECK_MATCHES → (no matches)    → RISING
+FLASHING → (all flash timers reach 0) → CLEARING
+CLEARING → (clearFlashing() called)   → FALLING
+FALLING  → (applyGravity() = false)   → CHECK_MATCHES  ← chain reaction loop
+FALLING  → (applyGravity() = false, CHECK_MATCHES finds nothing) → RISING
+RISING   → (row fully risen) → IDLE
 ```
+
+> **CLEARING** is a distinct one-frame state between FLASHING and FALLING. Its only job is to call `Grid.clearFlashing()` and immediately transition to FALLING. It exists so the flash-timer loop in FLASHING never also mutates the grid.
 
 **`update(time, delta)` responsibilities:**
 1. Drive the flash timer on all flashing blocks.
@@ -252,6 +255,7 @@ class GameState {
 
   get(): Readonly<GameStateData>;
   addScore(points: number): void;
+  // Sets chainLevel. Minimum valid value is 1. Pass 1 to reset between chains.
   setChain(level: number): void;
   updateHighestCombo(count: number): void;
   setGameOver(): void;
@@ -269,9 +273,13 @@ clearScore = BASE_POINTS * blockCount * comboMultiplier * chainMultiplier
 where:
   BASE_POINTS       = 10
   blockCount        = number of blocks cleared in this pass
-  comboMultiplier   = floor(blockCount / 3)      // ≥ 1
-  chainMultiplier   = chainLevel                  // starts at 1
+  comboMultiplier   = Math.max(1, Math.floor(blockCount / 3))   // always ≥ 1
+  chainMultiplier   = chainLevel                                 // starts at 1 for the first clear
 ```
+
+**Combo label rule**: `showComboLabel` fires only when `blockCount > 3` (i.e., `comboMultiplier ≥ 2`).
+
+**Chain reset rule**: after `FALLING → CHECK_MATCHES` finds no new matches, call `setChain(1)` — not `setChain(0)`. `chainLevel = 0` is never a valid game state.
 
 Example: 6 blocks cleared on a 2× chain reaction → `10 × 6 × 2 × 2 = 240 pts`
 

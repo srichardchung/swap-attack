@@ -6,26 +6,44 @@
 
 ## Phase 0 · Project Scaffold
 
-### Task 0.1 — Initialize repository & remote
-- [ ] `git init` in workspace root
-- [ ] Add remote: `git remote add origin git@github.com:srichardchung/swap-attack.git`
-- [ ] Create `.gitignore` (node_modules, dist, .DS_Store)
-- [ ] Create initial `README.md`
+### Task 0.1 — Initialize repository & remote ✅
+- [x] `git init` in workspace root (skip if already initialized)
+- [x] Add remote: `git remote add origin git@github.com:srichardchung/swap-attack.git`
+- [x] Create `.gitignore` (node_modules, dist, .DS_Store)
+- [x] Create initial `README.md`
 
-### Task 0.2 — Configure build environment
-- [ ] Create `package.json` with scripts (`dev`, `build`, `preview`) and dependencies (`phaser ^3.80.0`, `typescript ^5.4.0`, `vite ^5.2.0`)
-- [ ] Create `tsconfig.json` (ES2020 target, strict mode, bundler module resolution)
-- [ ] Create `vite.config.ts` (base `'./'`, port 3000, ES2020 build target)
-- [ ] Create `index.html` entry point pointing to `src/game/main.ts`
-- [ ] Run `npm install` and verify `npm run dev` starts the dev server
-- **Refs**: Design §7
+**Acceptance criteria**:
+- [x] `git remote -v` shows `origin git@github.com:srichardchung/swap-attack.git`
+- [x] `.gitignore` exists and lists `node_modules/`, `dist/`, `.DS_Store`
+- [x] `README.md` exists with at minimum a project title
 
-### Task 0.3 — Create source directory skeleton
-- [ ] Create `src/game/constants.ts` with all constants from Design §8
-- [ ] Create `src/game/types.ts` with `BlockColor`, `Block`, `GridCell`, `GridData`, `CursorState`, `GameStateData` types
-- [ ] Create empty placeholder files: `main.ts`, `scenes/BootScene.ts`, `scenes/GameScene.ts`, `scenes/GameOverScene.ts`, `components/Grid.ts`, `components/Cursor.ts`, `components/BlockSprite.ts`, `components/HUD.ts`, `state/GameState.ts`
-- [ ] Confirm `tsc --noEmit` passes with no errors on the empty stubs
-- **Refs**: Design §2, §3
+### Task 0.2 — Configure build environment ✅
+- [x] Create `package.json` with scripts (`dev`, `build`, `preview`) and dependencies (`phaser ^3.80.0`, `typescript ^5.4.0`, `vite ^5.2.0`)
+- [x] Create `tsconfig.json` (ES2020 target, strict mode, bundler module resolution)
+- [x] Create `vite.config.ts` (base `'./'`, port 3000, ES2020 build target)
+- [x] Create `index.html` entry point pointing to `src/game/main.ts`
+- [x] Run `npm install`
+
+**Acceptance criteria**:
+- [x] `npm install` exits 0 and `node_modules/phaser` exists
+- [x] `npx tsc --version` prints `5.x.x` (actual: 5.9.3)
+- [x] `vite.config.ts` compiles without errors (`npx tsc --noEmit` on it)
+- [x] `index.html` contains `<script type="module" src="/src/game/main.ts">`
+- [x] **Steering note**: no Angular, PrimeNG, Bootstrap, or NgRx packages appear in `package.json`
+
+### Task 0.3 — Create source directory skeleton ✅
+- [x] Create `src/game/constants.ts` with all constants from Design §8
+- [x] Create `src/game/types.ts` with `BlockColor`, `Block`, `GridCell`, `GridData`, `CursorState`, `GameStateData` types
+- [x] Create stub files (export an empty class or placeholder export): `src/game/main.ts`, `src/game/scenes/BootScene.ts`, `src/game/scenes/GameScene.ts`, `src/game/scenes/GameOverScene.ts`, `src/game/components/Grid.ts`, `src/game/components/Cursor.ts`, `src/game/components/BlockSprite.ts`, `src/game/components/HUD.ts`, `src/game/state/GameState.ts`
+- [x] Create `public/assets/blocks/` and `public/assets/fonts/` directories (add `.gitkeep`)
+
+**Acceptance criteria**:
+- [x] `npx tsc --noEmit` exits 0 with no errors or warnings
+- [x] All 9 stub files exist under `src/game/`
+- [x] `constants.ts` exports every constant named in Design §8 with the correct type
+- [x] `types.ts` exports `BlockColor` enum with 6 members, `Block` interface, `GridCell`, `GridData`, `CursorState`, `GameStateData`
+- [x] Row 0 = top, row 11 = bottom throughout all types and constants (0-indexed, per steering)
+- [x] `npm run build` exits 0 and produces `dist/index.html`
 
 ---
 
@@ -40,7 +58,7 @@
 
 ### Task 1.2 — Implement `Grid` constructor & initialization
 - [ ] Implement `GridData` 2D array construction (ROWS × COLS, all null)
-- [ ] Implement `initialize()`: fill rows 6–11 with random `BlockColor` values, no three-in-a-row on initialization
+- [ ] Implement `initialize()`: fill rows 6–11 (0-indexed) with random `BlockColor` values, no three-in-a-row on initialization
 - [ ] Expose `data` as readonly
 - **Refs**: REQ-1.1 – REQ-1.5, Design §4.1
 
@@ -68,9 +86,10 @@
 - **Refs**: REQ-3.6, Design §4.1
 
 ### Task 1.7 — Implement `Grid.riseRow()`
-- [ ] Shift all rows up by one (row 0 is lost → Game Over trigger if occupied)
-- [ ] Insert new random-color row at row 11
-- [ ] Return boolean indicating whether game-over condition was triggered
+- [ ] Before shifting, check if any cell in row 0 is non-null → if so, return `true` (Game Over)
+- [ ] Shift all rows up by one (row 0 is discarded)
+- [ ] Insert new random-color row at row 11 (bottom)
+- [ ] Return `false` if no game-over condition
 - **Refs**: REQ-1.6, REQ-1.7, Design §4.1
 
 ---
@@ -122,18 +141,20 @@
 
 ### Task 4.2 — Implement `GameScene` state machine
 - [ ] `IDLE`: poll cursor input; on swap event → call `Grid.swap()` → transition to `CHECK_MATCHES`
-- [ ] `CHECK_MATCHES`: call `Grid.findMatches()`; if results → `markFlashing` + `FLASHING`; else → `RISING`
-- [ ] `FLASHING`: count down `flashTimer` each frame; on all timers zero → `Grid.clearFlashing()` → `FALLING`
-- [ ] `FALLING`: call `Grid.applyGravity()` on interval; when false returned → `CHECK_MATCHES` (chain check)
-- [ ] `RISING`: advance rise progress; on full row rise → `Grid.riseRow()`; check game-over; return to `IDLE`
+- [ ] `CHECK_MATCHES`: call `Grid.findMatches()`; if results → `markFlashing` + transition to `FLASHING`; else → `RISING`
+- [ ] `FLASHING`: decrement `flashTimer` on all flashing blocks each frame; when all reach 0 → transition to `CLEARING`
+- [ ] `CLEARING`: call `Grid.clearFlashing()` in this one-frame state, then immediately transition to `FALLING`
+- [ ] `FALLING`: call `Grid.applyGravity()` every `FALL_STEP_MS`; when it returns `false` → transition to `CHECK_MATCHES` (chain reaction check)
+- [ ] If `CHECK_MATCHES` after `FALLING` finds no matches → `setChain(1)` to reset, then transition to `RISING`
+- [ ] `RISING`: advance rise progress; on full row rise → call `Grid.riseRow()`; if returns `true` → `GameState.setGameOver()` → `GameOverScene`; else → `IDLE`
 - **Refs**: REQ-3.4 – REQ-3.7, Design §4.3
 
 ### Task 4.3 — Implement chain & combo scoring
 - [ ] Track chain level across successive `CHECK_MATCHES → FALLING → CHECK_MATCHES` cycles
-- [ ] Count blocks cleared per pass for combo multiplier
+- [ ] Count blocks cleared per pass for combo multiplier: `Math.max(1, Math.floor(blockCount / 3))`
 - [ ] Call `GameState.addScore`, `setChain`, `updateHighestCombo` with correct values
-- [ ] Call `HUD.showChainLabel` / `HUD.showComboLabel` on qualifying clears
-- [ ] Reset `chainLevel` when `FALLING → CHECK_MATCHES` finds no new matches
+- [ ] Call `HUD.showChainLabel` when `chainLevel > 1`; call `HUD.showComboLabel` when `blockCount > 3`
+- [ ] Reset chain by calling `setChain(1)` (not 0) when `FALLING → CHECK_MATCHES` finds no new matches
 - **Refs**: REQ-4.1 – REQ-4.5, Design §5
 
 ### Task 4.4 — Sync `BlockSprite` pool with `GridData`

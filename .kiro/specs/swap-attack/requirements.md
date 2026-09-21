@@ -14,16 +14,16 @@ Swap Attack is a 2D tile-swapping puzzle game inspired by Tetris Attack / Panel 
 - **REQ-1.2** The grid shall be rendered as a vertically-oriented play area with the bottom row being the active zone.
 - **REQ-1.3** Each cell in the grid shall hold exactly one block or be empty.
 - **REQ-1.4** Blocks shall be assigned one of 6 distinct colors (e.g., red, blue, green, yellow, purple, teal).
-- **REQ-1.5** The grid shall be initialized with a randomized starting configuration of blocks occupying rows 7–12 (bottom half), with the top half empty.
+- **REQ-1.5** The grid shall be initialized with a randomized starting configuration of blocks occupying rows 6–11 (bottom half, 0-indexed), with the top half (rows 0–5) empty.
 - **REQ-1.6** New rows of blocks shall rise from the bottom of the playfield at a configurable speed, pushing existing blocks upward.
-- **REQ-1.7** The game shall end (Game Over) when any block is pushed above row 1 (the top boundary).
+- **REQ-1.7** The game shall end (Game Over) when any block occupies row 0 (the top boundary, 0-indexed) at the moment `riseRow()` is called. `riseRow()` checks row 0 for occupancy before shifting, returns `true` if game over, and `false` otherwise.
 
 ### REQ-2 · Cursor & Swapping
 
 - **REQ-2.1** The player cursor shall span exactly 2 columns horizontally and 1 row vertically.
-- **REQ-2.2** The cursor shall be movable with arrow keys or WASD:
-  - Left / Right: move cursor one column horizontally (clamped to columns 1–5 for the left cell).
-  - Up / Down: move cursor one row vertically (clamped to rows 1–12).
+- **REQ-2.2** The cursor shall be movable with arrow keys or WASD (all row/column values are 0-indexed):
+  - Left / Right: move cursor one column horizontally (left cell clamped to `[0, COLS-2]`).
+  - Up / Down: move cursor one row vertically (clamped to `[0, ROWS-1]`).
 - **REQ-2.3** Pressing the designated swap key (Space or X) shall swap the two blocks (or empty cells) currently under the cursor horizontally.
 - **REQ-2.4** Swapping shall be instant; no animation delay shall block the next swap input.
 - **REQ-2.5** Swapping an empty cell with a block shall be a valid move (the block slides into the empty cell).
@@ -41,10 +41,10 @@ Swap Attack is a 2D tile-swapping puzzle game inspired by Tetris Attack / Panel 
 
 ### REQ-4 · Combo & Chain Engine
 
-- **REQ-4.1** A **Combo** is defined as clearing more than 3 blocks in a single match pass (e.g., clearing 5 blocks at once = Combo ×2).
+- **REQ-4.1** A **Combo** is defined as clearing more than 3 blocks in a single match pass (e.g., clearing 6 blocks at once = Combo ×2). The combo **label** (`showComboLabel`) is shown only when `blockCount > 3`; a plain 3-block clear scores normally without a label.
 - **REQ-4.2** A **Chain** is defined as a match triggered by blocks falling after a prior clear, without any player swap in between.
-- **REQ-4.3** The chain counter shall increment by 1 for each successive reactive clear.
-- **REQ-4.4** The chain counter shall reset to 0 when blocks finish settling and no further matches are detected.
+- **REQ-4.3** The chain counter shall increment by 1 for each successive reactive clear. The first player-initiated clear starts at `chainLevel = 1`; the first chain reaction raises it to `chainLevel = 2`, and so on.
+- **REQ-4.4** The chain counter shall reset to `chainLevel = 1` (not 0) when blocks finish settling and no further matches are detected. `chainLevel = 0` is never a valid game state.
 - **REQ-4.5** Score multipliers shall be applied as follows:
   - Combo multiplier: `floor(cleared_count / 3)`
   - Chain multiplier: `chain_level` (1× for first clear, 2× for first chain reaction, etc.)
