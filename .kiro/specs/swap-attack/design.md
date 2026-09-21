@@ -1,386 +1,410 @@
 # Swap Attack — Design
 
+> **Engine**: Godot 4.7.2 · **Language**: GDScript
+> Row 0 = top, row 11 = bottom, column 0 = left edge (0-indexed throughout).
+
+---
+
 ## 1. Technology Stack
 
 | Concern | Choice | Rationale |
 |---|---|---|
-| Game framework | Phaser 3 | Mature HTML5 2D engine with scene lifecycle, input, asset loading, and rendering built-in |
-| Language | TypeScript | Compile-time safety; aligns with NFR-4 |
-| Build tool | Vite | Sub-second HMR, native ES-module dev server, straightforward static bundle output |
-| Target runtime | Browser (Chrome/Firefox/Safari) | No install required; ES2020+ target |
+| Engine | Godot 4.7.2 | Built-in 2D renderer, scene tree, input system, signals, and export pipeline — no additional runtime dependencies |
+| Language | GDScript | Native Godot scripting; hot-reload in editor; no compile step |
+| Scene format | `.tscn` (text scenes) + `.tres` (resources) | Human-readable, diff-friendly, version-control friendly |
+| Export | Godot export presets | Desktop (Windows / macOS / Linux); one-click build from editor |
 
 ---
 
-## 2. Repository & Project Structure
+## 2. Repository and Project Layout
 
 ```
 swap-attack/
-├── .kiro/
-│   └── specs/swap-attack/
-│       ├── requirements.md
-│       ├── design.md
-│       └── tasks.md
-├── public/
-│   └── assets/
-│       ├── blocks/          # Block sprite sheets (6 colors + flash frame)
-│       └── fonts/           # Bitmap font for HUD
-├── src/
-│   ├── game/
-│   │   ├── main.ts          # Phaser boot config & game entry point
-│   │   ├── constants.ts     # Grid dimensions, colors, timing constants
-│   │   ├── types.ts         # Shared TypeScript interfaces & enums
-│   │   ├── scenes/
-│   │   │   ├── BootScene.ts     # Asset preloading
-│   │   │   ├── GameScene.ts     # Main game loop (preload → create → update)
-│   │   │   └── GameOverScene.ts # Final score display
-│   │   ├── components/
-│   │   │   ├── Grid.ts          # Grid data model + match/clear/fall algorithms
-│   │   │   ├── Cursor.ts        # Cursor state + input handling
-│   │   │   ├── BlockSprite.ts   # Visual wrapper for a single block
-│   │   │   └── HUD.ts           # Score / chain / combo display layer
-│   │   └── state/
-│   │       └── GameState.ts     # Reactive global state (score, chain, combo)
-├── index.html
-├── package.json
-├── tsconfig.json
-└── vite.config.ts
+├── project.godot              ← Godot project file; sets Main.tscn as entry scene
+│                                and declares all Input Map actions
+├── scenes/
+│   ├── Main.tscn              ← thin root scene; loads GameScene on start
+│   ├── GameScene.tscn         ← main play field (Grid, Cursor, HUD, timer nodes)
+│   ├── Block.tscn             ← single reusable block node (Sprite2D + Label)
+│   └── GameOverScene.tscn     ← final score and restart UI
+├── scripts/
+│   ├── Constants.gd           ← Autoload: all shared numeric constants
+│   ├── GameState.gd           ← Autoload: reactive score / chain / combo state
+│   ├── Grid.gd                ← board data array + match / clear / gravity logic
+│   ├── Cursor.gd              ← cursor position + key-repeat input handling
+│   ├── Block.gd               ← per-block visual state (colour, flash, fall tween)
+│   ├── HUD.gd                 ← score / chain / combo Label nodes
+│   └── AudioManager.gd        ← Autoload stub (audio out of scope for Phase 0)
+├── assets/
+│   ├── sprites/               ← 6 colour PNGs + flash-frame PNG
+│   └── fonts/                 ← .ttf or bitmap font for HUD
+└── README.md
 ```
 
 ---
 
-## 3. Data Models
+## 3. Data Model (GDScript)
 
-### 3.1 BlockColor (enum)
+### 3.1 Block colours
 
-```typescript
-// src/game/types.ts
-export enum BlockColor {
-  Red    = 'red',
-  Blue   = 'blue',
-  Green  = 'green',
-  Yellow = 'yellow',
-  Purple = 'purple',
-  Teal   = 'teal',
+Defined in `Constants.gd`:
+
+```gdscript
+enum BlockColor { RED, BLUE, GREEN, YELLOW, PURPLE, TEAL }
+const COLOR_COUNT := 6
+const ALL_COLORS := [
+    BlockColor.RED, BlockColor.BLUE, BlockColor.GREEN,
+    BlockColor.YELLOW, BlockColor.PURPLE, BlockColor.TEAL
+]
+```
+
+### 3.2 Block state
+
+```gdscript
+enum BlockState { IDLE, FLASHING, FALLING, EMPTY }
+```
+
+### 3.3 Grid cell dictionary
+
+Each cell in `Grid._data` is either `null` (empty) or a `Dictionary`:
+
+```gdscript
+# Example occupied cell
+{
+    "color": BlockColor.RED,   # int enum value
+    "state": BlockState.IDLE,  # int enum value
 }
 ```
 
-### 3.2 Block (interface)
+### 3.4 Grid data array
 
-```typescript
-export interface Block {
-  color: BlockColor;
-  state: 'idle' | 'flashing' | 'falling' | 'empty';
-  flashTimer: number;   // ms remaining in flash animation
-}
+```gdscript
+# Grid._data: Array[Array]  — _data[row][col]
+# row 0 = top, row ROWS-1 = bottom
+# col 0 = left, col COLS-1 = right
 ```
 
-### 3.3 GridCell
+Dimensions in `Constants.gd`:
 
-```typescript
-export type GridCell = Block | null;   // null = empty cell
+```gdscript
+const COLS := 6
+const ROWS := 12
 ```
 
-### 3.4 GridData
+### 3.5 Cursor state
 
-The canonical playfield is a 2D array:
+Stored inside `Cursor.gd`:
 
-```typescript
-export type GridData = GridCell[][];   // [row][col], row 0 = top
+```gdscript
+var row: int  # clamped [0, ROWS-1]
+var col: int  # clamped [0, COLS-2]  — left cell of 2-wide span
 ```
 
-Dimensions live in `constants.ts`:
+### 3.6 GameState fields (Autoload)
 
-```typescript
-export const COLS = 6;
-export const ROWS = 12;
+```gdscript
+var score:         int  = 0
+var chain_level:   int  = 1   # minimum valid value is 1
+var highest_combo: int  = 0
+var is_game_over:  bool = false
 ```
 
-### 3.5 CursorState
+### 3.7 CellCoord helper
 
-```typescript
-export interface CursorState {
-  row: number;   // 0-indexed, clamped [0, ROWS-1]
-  col: number;   // 0-indexed, clamped [0, COLS-2]  (left cell of 2-wide cursor)
-}
+```gdscript
+# Used as a lightweight value type — passed as Dictionary or Vector2i
+# { "row": int, "col": int }
+# or equivalently Vector2i(col, row) where x=col, y=row
 ```
 
-### 3.6 GameStateData
+Design uses `Vector2i(col, row)` throughout for compactness.
 
-```typescript
-export interface GameStateData {
-  score: number;
-  chainLevel: number;
-  highestCombo: number;
-  isGameOver: boolean;
+### 3.8 SceneState enum
+
+Defined in `GameScene.gd`:
+
+```gdscript
+enum SceneState {
+    IDLE,
+    CHECK_MATCHES,
+    FLASHING,
+    CLEARING,      # one-frame state: calls clear_flashing(), then → FALLING
+    FALLING,
+    RISING,
+    GAME_OVER
 }
 ```
 
 ---
 
-## 4. Component Design
+## 4. Constants (`Constants.gd` Autoload)
 
-### 4.1 `Grid.ts`
-
-Owns all grid mutation and match logic. Stateless pure functions where possible; mutable state is the `GridData` array only.
-
-**Public API:**
-
-```typescript
-class Grid {
-  readonly data: GridData;
-
-  constructor(cols: number, rows: number);
-
-  // Seed the bottom half with random colored blocks
-  initialize(): void;
-
-  // Swap the two cells at (row, col) and (row, col+1)
-  swap(row: number, col: number): void;
-
-  // Scan for matches; returns all matched cell coordinates
-  findMatches(): CellCoord[];
-
-  // Mark matched cells as 'flashing'; caller drives the timer
-  markFlashing(matches: CellCoord[]): void;
-
-  // Clear all cells currently in 'flashing' state
-  clearFlashing(): void;
-
-  // Apply gravity: drop all floating blocks one step; returns true if any block moved
-  applyGravity(): boolean;
-
-  // Add a new row at the bottom, shift everything up by one.
-  // Returns true if row 0 was occupied before shifting (Game Over condition).
-  riseRow(): boolean;
-}
-
-export interface CellCoord { row: number; col: number; }
+```gdscript
+const COLS             := 6
+const ROWS             := 12
+const BLOCK_PX         := 48        # pixel size of one cell
+const COLOR_COUNT      := 6
+const FLASH_DURATION   := 0.5       # seconds blocks flash before clearing
+const FALL_STEP_SEC    := 0.05      # seconds per gravity tick
+const RISE_SPEED_SEC   := 3.0       # seconds per full row rise (normal speed)
+const BASE_POINTS      := 10
+const INPUT_DELAY_SEC  := 0.15      # initial key-repeat delay
+const INPUT_REPEAT_SEC := 0.08      # subsequent key-repeat interval
 ```
 
-#### Match Detection Algorithm
+Derived layout (also in `Constants.gd`):
 
-1. **Horizontal pass**: for each row, scan left-to-right collecting consecutive same-color runs. Any run ≥ 3 is added to the match set.
-2. **Vertical pass**: for each column, scan top-to-bottom with the same logic.
-3. Returns the **union** of all matched coordinates (deduped by `row,col` key).
-
-#### Gravity Algorithm
-
-Single-pass bottom-up scan per column:
-
-```
-for col in 0..COLS:
-  write_ptr = ROWS - 1
-  for row in ROWS-1..0:
-    if grid[row][col] is not empty and not flashing:
-      move block to grid[write_ptr][col]
-      write_ptr--
-  fill remaining rows above write_ptr with null
+```gdscript
+const CANVAS_W         := 800
+const CANVAS_H         := 600
+const HUD_HEIGHT       := 80
+const GRID_ORIGIN_X    := (CANVAS_W - COLS * BLOCK_PX) / 2   # = 256
+const GRID_ORIGIN_Y    := HUD_HEIGHT                          # = 80
 ```
 
-### 4.2 `Cursor.ts`
+---
 
-Wraps `CursorState` and wires Phaser keyboard input.
+## 5. Input Map (`project.godot`)
 
-```typescript
-class Cursor {
-  state: CursorState;
-
-  constructor(scene: Phaser.Scene);
-
-  // Called every frame; polls key state and emits 'swap' event if action key pressed
-  update(delta: number): void;
-
-  // Returns current cursor position
-  getPosition(): CursorState;
-}
-```
-
-Key bindings registered via `scene.input.keyboard.addKeys`:
-
-| Action | Keys |
+| Action name | Default keys |
 |---|---|
-| Move left | ← / A |
-| Move right | → / D |
-| Move up | ↑ / W |
-| Move down | ↓ / S |
-| Swap | Space / X |
+| `ui_left`   | Arrow Left, A |
+| `ui_right`  | Arrow Right, D |
+| `ui_up`     | Arrow Up, W |
+| `ui_down`   | Arrow Down, S |
+| `swap`      | Space, X |
 
-Repeat rate: 150 ms initial delay, 80 ms repeat for held movement keys (implemented with per-key timers in `update`).
+Scripts reference these action names only via `Input.is_action_just_pressed("swap")` etc.
 
-### 4.3 `GameScene.ts`
+---
 
-Orchestrates all subsystems. Implements the Phaser scene lifecycle.
+## 6. Scene Design
 
-**State machine inside GameScene:**
+### 6.1 `Main.tscn`
+
+Minimal root scene. On `_ready()` calls `get_tree().change_scene_to_file("res://scenes/GameScene.tscn")`.
+
+### 6.2 `GameScene.tscn` — node hierarchy
 
 ```
-IDLE → (swap input) → CHECK_MATCHES
-CHECK_MATCHES → (matches found) → FLASHING
-CHECK_MATCHES → (no matches)    → RISING
-FLASHING → (all flash timers reach 0) → CLEARING
-CLEARING → (clearFlashing() called)   → FALLING
-FALLING  → (applyGravity() = false)   → CHECK_MATCHES  ← chain reaction loop
-FALLING  → (applyGravity() = false, CHECK_MATCHES finds nothing) → RISING
-RISING   → (row fully risen) → IDLE
+GameScene (Node2D)
+├── Grid          (Node2D)  ← attach Grid.gd; owns _data array + block sprites
+├── CursorNode    (Node2D)  ← attach Cursor.gd; draws the 2-cell highlight rect
+├── HUD           (CanvasLayer)
+│   └── HUDScript (attach HUD.gd)
+│       ├── ScoreLabel       (Label)
+│       ├── ChainLabel       (Label)
+│       ├── ComboLabel       (Label)
+│       └── HighComboLabel   (Label)
+├── FlashTimer    (Timer)   ← one-shot; duration = FLASH_DURATION
+├── FallTimer     (Timer)   ← repeating; wait_time = FALL_STEP_SEC
+└── RiseTimer     (Timer)   ← repeating; wait_time = RISE_SPEED_SEC / ROWS
 ```
 
-> **CLEARING** is a distinct one-frame state between FLASHING and FALLING. Its only job is to call `Grid.clearFlashing()` and immediately transition to FALLING. It exists so the flash-timer loop in FLASHING never also mutates the grid.
+### 6.3 `Block.tscn` — node hierarchy
 
-**`update(time, delta)` responsibilities:**
-1. Drive the flash timer on all flashing blocks.
-2. Advance gravity one step per `FALL_STEP_MS` (configurable, default 50 ms).
-3. Poll `Cursor.update(delta)` and handle swap events.
-4. Transition the scene state machine.
-
-### 4.4 `HUD.ts`
-
-A Phaser `GameObjects.Container` placed above the playfield. Subscribes to `GameState` changes and re-renders text objects.
-
-```typescript
-class HUD extends Phaser.GameObjects.Container {
-  bind(state: GameState): void;   // registers onChange callbacks
-  showChainLabel(level: number): void;   // animates "Chain ×N" label
-  showComboLabel(count: number): void;   // animates "Combo ×N" label
-}
+```
+Block (Node2D)
+├── Sprite2D      ← displays colour or flash texture
+└── (no children required for Phase 1)
 ```
 
-### 4.5 `GameState.ts`
+`Block.gd` exposes:
 
-Lightweight reactive state — no external library.
+```gdscript
+func set_color(c: int) -> void    # BlockColor enum value
+func play_flash() -> void         # switches to flash texture
+func set_empty() -> void          # hides sprite
+```
 
-```typescript
-class GameState {
-  private data: GameStateData;
-  private listeners: Array<(data: GameStateData) => void>;
+### 6.4 `GameOverScene.tscn`
 
-  get(): Readonly<GameStateData>;
-  addScore(points: number): void;
-  // Sets chainLevel. Minimum valid value is 1. Pass 1 to reset between chains.
-  setChain(level: number): void;
-  updateHighestCombo(count: number): void;
-  setGameOver(): void;
-  onChange(fn: (data: GameStateData) => void): void;
-}
+```
+GameOverScene (Control)
+├── FinalScoreLabel  (Label)
+├── HighComboLabel   (Label)
+└── RestartButton    (Button) ← on pressed: change_scene GameScene
 ```
 
 ---
 
-## 5. Scoring Formula
+## 7. Script Design
+
+### 7.1 `Grid.gd`
+
+Owns `_data: Array[Array]` and all mutation logic. Emits signals to `GameScene`.
+
+**Signals**:
+```gdscript
+signal matches_found(coords: Array)   # Array of Vector2i(col,row)
+signal gravity_settled                # emitted when apply_gravity() moves nothing
+signal row_risen(game_over: bool)     # emitted after rise_row()
+```
+
+**Public API**:
+```gdscript
+func initialize() -> void
+    # Fill rows 6–11 with random colours; no 3-in-a-row on init.
+
+func swap(row: int, col: int) -> void
+    # Swap _data[row][col] ↔ _data[row][col+1].
+    # Validates: col in [0, COLS-2]; row in [0, ROWS-1].
+    # No-op if both cells are null (REQ-2.6).
+
+func find_matches() -> Array:
+    # Returns Array of Vector2i(col,row) — deduplicated union of
+    # horizontal and vertical runs of ≥ 3 same-colour IDLE blocks.
+
+func mark_flashing(coords: Array) -> void
+    # Set state = FLASHING for each coord in coords.
+
+func clear_flashing() -> void
+    # Set all FLASHING cells to null.
+
+func apply_gravity() -> bool:
+    # Bottom-up column scan: compact non-null, non-FLASHING blocks downward.
+    # Returns true if any block moved, false if board is settled.
+
+func rise_row() -> bool:
+    # Check row 0 for any non-null cell → if found, return true (game over).
+    # Otherwise shift all rows up by 1 and insert a new random row at row 11.
+    # Returns false if no game-over condition.
+```
+
+**Match detection algorithm**:
+1. Horizontal pass: for each row 0..11, scan left-to-right collecting consecutive same-colour `IDLE` runs. Any run ≥ 3 is added to the result set.
+2. Vertical pass: for each col 0..5, scan top-to-bottom with the same logic.
+3. Return the **deduplicated union** (use a `Dictionary` keyed by `Vector2i` for O(1) dedup).
+
+**Gravity algorithm**:
+```
+for col in 0..COLS-1:
+    write_ptr = ROWS - 1
+    for row in ROWS-1 down to 0:
+        if _data[row][col] != null and _data[row][col].state != FLASHING:
+            _data[write_ptr][col] = _data[row][col]
+            if write_ptr != row:
+                _data[row][col] = null
+            write_ptr -= 1
+    while write_ptr >= 0:
+        _data[write_ptr][col] = null
+        write_ptr -= 1
+```
+
+### 7.2 `Cursor.gd`
+
+Attached to `CursorNode`. Handles key-repeat and emits `swap_requested`.
+
+**Signals**:
+```gdscript
+signal swap_requested(row: int, col: int)
+signal moved(row: int, col: int)
+```
+
+**Key-repeat logic**: per-action timers `_delay_left`, `_repeat_left`; initialised to `INPUT_DELAY_SEC` on first press, then fires every `INPUT_REPEAT_SEC` while held.
+
+### 7.3 `GameState.gd` (Autoload)
+
+Lightweight reactive store. All mutators emit `state_changed`.
+
+```gdscript
+signal state_changed(data: Dictionary)
+
+func add_score(points: int) -> void
+func set_chain(level: int) -> void   # enforces minimum of 1
+func update_highest_combo(count: int) -> void
+func set_game_over() -> void
+func get_state() -> Dictionary       # returns a copy of all fields
+```
+
+### 7.4 `HUD.gd`
+
+Subscribes to `GameState.state_changed` in `_ready()`.
+
+```gdscript
+func bind(state_node: Node) -> void      # connects state_changed signal
+func show_chain_label(level: int) -> void  # tween pop-in / fade-out
+func show_combo_label(count: int) -> void
+```
+
+### 7.5 `GameScene.gd` (attached to `GameScene.tscn`)
+
+Drives the `SceneState` machine. All state transitions happen here.
+
+**State machine**:
 
 ```
-clearScore = BASE_POINTS * blockCount * comboMultiplier * chainMultiplier
+IDLE
+  └─ on swap_requested  → Grid.swap() → CHECK_MATCHES
 
-where:
-  BASE_POINTS       = 10
-  blockCount        = number of blocks cleared in this pass
-  comboMultiplier   = Math.max(1, Math.floor(blockCount / 3))   // always ≥ 1
-  chainMultiplier   = chainLevel                                 // starts at 1 for the first clear
+CHECK_MATCHES
+  ├─ find_matches() returns non-empty → mark_flashing() → start FlashTimer → FLASHING
+  └─ find_matches() returns empty     → GameState.set_chain(1) → RISING
+
+FLASHING
+  └─ FlashTimer.timeout → CLEARING
+
+CLEARING  (one-frame state)
+  └─ Grid.clear_flashing() → start FallTimer → FALLING
+
+FALLING
+  └─ FallTimer.timeout → Grid.apply_gravity()
+      ├─ moved = true  → stay in FALLING (timer auto-repeats)
+      └─ moved = false → CHECK_MATCHES  (chain-reaction scan)
+
+RISING
+  └─ RiseTimer.timeout → Grid.rise_row()
+      ├─ game_over = true  → GameState.set_game_over() → GAME_OVER
+      └─ game_over = false → IDLE
+
+GAME_OVER
+  └─ (waits for input or auto-transition to GameOverScene)
 ```
 
-**Combo label rule**: `showComboLabel` fires only when `blockCount > 3` (i.e., `comboMultiplier ≥ 2`).
+> **CLEARING** is a distinct one-frame state so the flash-timer loop in **FLASHING** never also mutates the grid in the same frame.
 
-**Chain reset rule**: after `FALLING → CHECK_MATCHES` finds no new matches, call `setChain(1)` — not `setChain(0)`. `chainLevel = 0` is never a valid game state.
+**Chain tracking** inside `GameScene.gd`:
 
-Example: 6 blocks cleared on a 2× chain reaction → `10 × 6 × 2 × 2 = 240 pts`
+```gdscript
+var _current_chain: int = 1
+
+# On entering CHECK_MATCHES from FALLING (chain reaction path):
+#   if matches found → GameState.set_chain(_current_chain); _current_chain += 1
+#   if no matches    → GameState.set_chain(1); _current_chain = 1 → go to RISING
+
+# On entering CHECK_MATCHES from IDLE (player swap path):
+#   _current_chain = 1
+```
 
 ---
 
-## 6. Scene Flow
+## 8. Scoring Formula
 
 ```
-main.ts
-  └─ Phaser.Game
-       ├─ BootScene    → preloads all assets → starts GameScene
-       ├─ GameScene    → main loop
-       └─ GameOverScene → final score, restart button
+clear_score = BASE_POINTS × block_count × combo_mult × chain_level
+
+combo_mult  = max(1, block_count / 3)   # integer floor division
+chain_level = GameState.chain_level      # 1 for first clear, 2 for first chain, …
 ```
 
----
+Combo label fires when `block_count > 3` (i.e. `combo_mult ≥ 2`).
+Chain label fires when `chain_level > 1`.
 
-## 7. Build Configuration
-
-### `vite.config.ts`
-
-```typescript
-import { defineConfig } from 'vite';
-
-export default defineConfig({
-  base: './',
-  server: { port: 3000 },
-  build: {
-    outDir: 'dist',
-    target: 'es2020',
-  },
-});
-```
-
-### `tsconfig.json`
-
-```json
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "noImplicitAny": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "outDir": "dist"
-  },
-  "include": ["src"]
-}
-```
-
-### `package.json` (key fields)
-
-```json
-{
-  "scripts": {
-    "dev":   "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "phaser": "^3.80.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.4.0",
-    "vite": "^5.2.0"
-  }
-}
-```
-
----
-
-## 8. Key Constants (`constants.ts`)
-
-```typescript
-export const COLS             = 6;
-export const ROWS             = 12;
-export const BLOCK_SIZE       = 48;         // px per cell
-export const COLORS           = 6;          // number of distinct block colors
-export const FLASH_DURATION   = 500;        // ms blocks flash before clearing
-export const FALL_STEP_MS     = 50;         // ms per gravity tick
-export const RISE_SPEED_MS    = 3000;       // ms per row rise (normal speed)
-export const BASE_POINTS      = 10;
-export const INPUT_DELAY_MS   = 150;        // initial key-repeat delay
-export const INPUT_REPEAT_MS  = 80;         // subsequent key-repeat interval
-```
+Example: 6 blocks cleared on a chain-level-2 reaction → `10 × 6 × 2 × 2 = 240 pts`.
 
 ---
 
 ## 9. Rendering Layout
 
 ```
-┌─────────────────────────┐  ← 480 px wide canvas (800 × 600 default)
-│  HUD: Score / Chain     │  (top 80 px)
+┌─────────────────────────┐  800 px wide
+│   HUD (CanvasLayer)     │  top 80 px
 ├─────────────────────────┤
 │                         │
-│   6 × 12 Block Grid     │  (288 × 576 px  @  48 px/block)
-│   centered horizontally │
+│   6 × 12 block grid     │  288 × 576 px  (@48 px/block)
+│   centred horizontally  │  origin (256, 80)
 │                         │
-└─────────────────────────┘
+└─────────────────────────┘  600 px tall
 ```
 
-Canvas: `800 × 600`. Grid origin: `x = (800 - 288) / 2 = 256`, `y = 80`.
+Block pixel position: `Vector2(GRID_ORIGIN_X + col * BLOCK_PX, GRID_ORIGIN_Y + row * BLOCK_PX)`.
