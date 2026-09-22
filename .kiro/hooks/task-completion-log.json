@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Task Completion Changelog",
+      "trigger": "PostTaskExec",
+      "description": "Appends a timestamped entry to CHANGELOG.md whenever a spec task is marked complete",
+      "action": {
+        "type": "command",
+        "command": "node -e \\\"const d=new Date().toISOString();const stdin=require('fs').readFileSync('/dev/stdin','utf8');let info='unknown task';try{const j=JSON.parse(stdin);info=j.taskDescription||j.task_description||JSON.stringify(j);}catch(e){}const line=d+' COMPLETED: '+info+'\\n';require('fs').appendFileSync('CHANGELOG.md',line);\\\""
+      }
+    }
+  ]
+}

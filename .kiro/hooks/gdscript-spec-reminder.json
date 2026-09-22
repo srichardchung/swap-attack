@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "GDScript Spec Convention Reminder",
+      "trigger": "PostFileSave",
+      "matcher": "\\.gd$",
+      "action": {
+        "type": "agent",
+        "prompt": "A GDScript file was just saved in the swap-attack project. Quickly check it against these project conventions from the steering file and flag any violations:\n1. All shared numeric constants (grid size, timing, scoring) must live in Constants.gd — never re-defined in other scripts.\n2. Use signals for cross-node communication (block_cleared, chain_updated, game_over, etc.) — not direct method calls across unrelated scene branches.\n3. Player input must reference Input Map action names (ui_left, ui_right, ui_up, ui_down, swap) — never hard-coded KEY_* constants.\n4. Pure logic helpers should use `static func` where no node context is needed.\n5. Row 0 = top, row 11 = bottom; cursor col identifies the LEFT cell of its 2-cell span.\n6. Every script intended to be referenced by type elsewhere must have a `class_name` declaration.\n\nIf the file looks clean, say so briefly. Only flag real issues — don't nitpick style."
+      }
+    }
+  ]
+}
