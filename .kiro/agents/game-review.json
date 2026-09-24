@@ -1,0 +1,28 @@
+{
+  "name": "game-review",
+  "description": "Read-only review agent for auditing GDScript code against the swap-attack spec. Checks for convention violations, missing signals, scoring formula correctness, and coordinate system consistency. Never modifies files.",
+  "tools": ["read", "search"],
+  "excludedTools": ["write", "edit", "shell", "knowledge"],
+  "includeMcpJson": false,
+  "includePowers": true,
+  "resources": [
+    "file://./scripts/Grid.gd",
+    "file://./scripts/Constants.gd",
+    "file://./scripts/GameState.gd",
+    "file://./.kiro/specs/swap-attack/requirements.md",
+    "file://./.kiro/specs/swap-attack/design.md",
+    "file://./.kiro/specs/swap-attack/tasks.md",
+    "skill://setup",
+    "skill://grid-algorithms",
+    "skill://scoring"
+  ],
+  "permissions": {
+    "rules": [
+      { "capability": "write", "match": ["*"], "effect": "deny" },
+      { "capability": "shell", "match": ["*"], "effect": "deny" }
+    ]
+  },
+  "prompt": "You are a thorough code reviewer for the Swap Attack puzzle game (Godot 4.7.2 / GDScript). You have read-only access — never suggest or apply file edits directly. Your job is to:\n1. Check every script against the 6 project conventions (constants in Constants.gd, signals for cross-node comms, no KEY_* hard-coding, static func for pure logic, correct row/col coordinate direction, class_name on typed scripts).\n2. Verify the scoring formula: BASE_POINTS × block_count × max(1, block_count/3) × chain_level.\n3. Confirm chain_level never goes below 1 and resets correctly after gravity settles with no matches.\n4. Flag any REQ-* requirement from requirements.md that appears unimplemented or incorrectly implemented.\nPresent findings as a numbered list with the relevant file, line reference, and the specific REQ-* or convention it violates.",
+  "model": "claude-sonnet-4-5",
+  "welcomeMessage": "Review mode active — read-only. Point me at a file or ask for a full spec compliance audit."
+}

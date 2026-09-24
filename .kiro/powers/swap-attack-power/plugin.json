@@ -1,8 +1,12 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "swap-attack-power",
   "version": "1.0.0",
   "displayName": "Swap Attack Dev Power",
   "description": "Packages GDScript conventions, grid algorithm context, and development skills for the Swap Attack puzzle game built with Godot 4.7.2. Activates when you mention keywords like 'gdscript', 'godot', 'grid', 'match', 'swap', 'block', or 'chain'.",
+  "author": {
+    "name": "srichardchung"
+  },
   "keywords": [
     "gdscript",
     "godot",
@@ -16,7 +20,6 @@
     "gamestate",
     "puzzle"
   ],
-  "author": "srichardchung",
   "skills": [
     "setup",
     "grid-algorithms",
